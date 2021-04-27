@@ -1793,6 +1793,9 @@ struct task_struct {
 	unsigned int	sequential_io;
 	unsigned int	sequential_io_avg;
 #endif
+#ifdef CONFIG_ANDROID_SIMPLE_LMK
+	struct task_struct		*simple_lmk_next;
+#endif
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */
