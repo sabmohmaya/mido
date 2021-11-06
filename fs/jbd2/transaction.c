@@ -515,6 +515,7 @@ int jbd2_journal_start_reserved(handle_t *handle, unsigned int type,
 	 */
 	ret = start_this_handle(journal, handle, GFP_NOFS);
 	if (ret < 0) {
+		handle->h_journal = journal;
 		jbd2_journal_free_reserved(handle);
 		return ret;
 	}
@@ -1231,8 +1232,6 @@ void jbd2_buffer_abort_trigger(struct journal_head *jh,
 	triggers->t_abort(triggers, jh2bh(jh));
 }
 
-
-
 /**
  * int jbd2_journal_dirty_metadata() -  mark a buffer as containing dirty metadata
  * @handle: transaction to add buffer to.
@@ -1265,12 +1264,48 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 
 	if (is_handle_aborted(handle))
 		return -EROFS;
-	journal = transaction->t_journal;
-	jh = jbd2_journal_grab_journal_head(bh);
-	if (!jh) {
+	if (!buffer_jbd(bh)) {
 		ret = -EUCLEAN;
 		goto out;
 	}
+	/*
+	 * We don't grab jh reference here since the buffer must be part
+	 * of the running transaction.
+	 */
+	jh = bh2jh(bh);
+	/*
+	 * This and the following assertions are unreliable since we may see jh
+	 * in inconsistent state unless we grab bh_state lock. But this is
+	 * crucial to catch bugs so let's do a reliable check until the
+	 * lockless handling is fully proven.
+	 */
+	if (jh->b_transaction != transaction &&
+	    jh->b_next_transaction != transaction) {
+		jbd_lock_bh_state(bh);
+		J_ASSERT_JH(jh, jh->b_transaction == transaction ||
+				jh->b_next_transaction == transaction);
+		jbd_unlock_bh_state(bh);
+	}
+	if (jh->b_modified == 1) {
+		/* If it's in our transaction it must be in BJ_Metadata list. */
+		if (jh->b_transaction == transaction &&
+		    jh->b_jlist != BJ_Metadata) {
+			jbd_lock_bh_state(bh);
+			if (jh->b_transaction == transaction &&
+			    jh->b_jlist != BJ_Metadata)
+				pr_err("JBD2: assertion failure: h_type=%u "
+				       "h_line_no=%u block_no=%llu jlist=%u\n",
+				       handle->h_type, handle->h_line_no,
+				       (unsigned long long) bh->b_blocknr,
+				       jh->b_jlist);
+			J_ASSERT_JH(jh, jh->b_transaction != transaction ||
+					jh->b_jlist == BJ_Metadata);
+			jbd_unlock_bh_state(bh);
+		}
+		goto out;
+	}
+
+	journal = transaction->t_journal;
 	jbd_debug(5, "journal_head %p\n", jh);
 	JBUFFER_TRACE(jh, "entry");
 
@@ -1282,11 +1317,11 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 		 * of the transaction. This needs to be done
 		 * once a transaction -bzzz
 		 */
-		jh->b_modified = 1;
 		if (handle->h_buffer_credits <= 0) {
 			ret = -ENOSPC;
 			goto out_unlock_bh;
 		}
+		jh->b_modified = 1;
 		handle->h_buffer_credits--;
 	}
 
@@ -1361,7 +1396,6 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 	spin_unlock(&journal->j_list_lock);
 out_unlock_bh:
 	jbd_unlock_bh_state(bh);
-	jbd2_journal_put_journal_head(jh);
 out:
 	JBUFFER_TRACE(jh, "exit");
 	return ret;
@@ -1472,14 +1506,21 @@ int jbd2_journal_forget (handle_t *handle, struct buffer_head *bh)
 		/* However, if the buffer is still owned by a prior
 		 * (committing) transaction, we can't drop it yet... */
 		JBUFFER_TRACE(jh, "belongs to older transaction");
-		/* ... but we CAN drop it from the new transaction if we
-		 * have also modified it since the original commit. */
+		/* ... but we CAN drop it from the new transaction through
+		 * marking the buffer as freed and set j_next_transaction to
+		 * the new transaction, so that not only the commit code
+		 * knows it should clear dirty bits when it is done with the
+		 * buffer, but also the buffer can be checkpointed only
+		 * after the new transaction commits. */
 
-		if (jh->b_next_transaction) {
-			J_ASSERT(jh->b_next_transaction == transaction);
+		set_buffer_freed(bh);
+
+		if (!jh->b_next_transaction) {
 			spin_lock(&journal->j_list_lock);
-			jh->b_next_transaction = NULL;
+			jh->b_next_transaction = transaction;
 			spin_unlock(&journal->j_list_lock);
+		} else {
+			J_ASSERT(jh->b_next_transaction == transaction);
 
 			/*
 			 * only drop a reference if this transaction modified
