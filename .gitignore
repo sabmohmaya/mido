@@ -99,3 +99,4 @@ all.config
 
 # Misc
 /out
+buildlog*txt
