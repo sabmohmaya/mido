@@ -2994,8 +2994,6 @@ void destroy_checkpoint_caches(void);
 /*
  * data.c
  */
-int f2fs_init_post_read_processing(void);
-void f2fs_destroy_post_read_processing(void);
 void f2fs_submit_merged_write(struct f2fs_sb_info *sbi, enum page_type type);
 void f2fs_submit_merged_write_cond(struct f2fs_sb_info *sbi,
 				struct inode *inode, nid_t ino, pgoff_t idx,
@@ -3356,13 +3354,9 @@ static inline void f2fs_set_encrypted_inode(struct inode *inode)
 #endif
 }
 
-/*
- * Returns true if the reads of the inode's data need to undergo some
- * postprocessing step, like decryption or authenticity verification.
- */
-static inline bool f2fs_post_read_required(struct inode *inode)
+static inline bool f2fs_bio_encrypted(struct bio *bio)
 {
-	return f2fs_encrypted_file(inode);
+	return bio->bi_private != NULL;
 }
 
 #define F2FS_FEATURE_FUNCS(name, flagname) \
