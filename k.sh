@@ -27,7 +27,7 @@ $TG "Build started $(date +'%Y%m%d %H%M %Z')"$'\n'$'\n'"Branch: $(git branch --s
 
 make mido_defconfig
 PATH="$HOME/aarch64/bin:${PATH}" \
-make -j$(nproc --all) CROSS_COMPILE=aarch64-linux-android- \
+make -j$(nproc --all) CROSS_COMPILE=aarch64-elf- \
 		      2>&1 | tee buildlog.txt
 
 [ "$(grep Image.gz-dtb $LOG | cut -d / -f 4)" == "" ] && failed || success
