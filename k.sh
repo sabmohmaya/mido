@@ -1,3 +1,13 @@
+export TZ='Asia/Kolkata'
+
+git clone https://github.com/fabianonline/telegram.sh $HOME/telegram.sh
+mv .telegram.sh $HOME/.telegram.sh
+sed -i s/demo1/${BOT_API_KEY}/g $HOME/.telegram.sh
+sed -i s/demo2/${CHAT_ID}/g $HOME/.telegram.sh
+
+git clone https://github.com/osm0sis/AnyKernel3 $HOME/AnyKernel3
+git clone https://github.com/sabmohmaya/mido -b gcc --depth 1 $HOME/aarch64
+
 KDIR=$PWD
 TG=$HOME/telegram.sh/telegram
 LOG=$KDIR/buildlog*.txt
@@ -31,3 +41,5 @@ make -j$(nproc --all) CROSS_COMPILE=aarch64-linux-android- \
 		      2>&1 | tee buildlog.txt
 
 [ "$(grep Image.gz-dtb $LOG | cut -d / -f 4)" == "" ] && failed || success
+
+exit
