@@ -6,9 +6,9 @@ name: CI
 on:
   # Triggers the workflow on push or pull request events but only for the main branch
   push:
-    branches: [ staging/f2fs-2/lineage-15.1 ]
+    branches: [ staging/gcc/lineage-15.1 ]
   pull_request:
-    branches: [ staging/f2fs-2/lineage-15.1 ]
+    branches: [ staging/gcc/lineage-15.1 ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -27,4 +27,4 @@ jobs:
 
       # Runs a single command using the runners shell
       - name: Run build
-        run: bash builder.sh
+        run: bash k.sh
